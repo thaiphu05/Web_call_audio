@@ -7,8 +7,10 @@ const app = express();
 const server = http.createServer(app);
 const io = new Server(server);
 
-app.use(express.static("."));
+// Phục vụ file tĩnh từ thư mục "public"
+app.use(express.static("public"));
 
+// WebSocket events
 io.on("connection", (socket) => {
   console.log("Client connected:", socket.id);
 
@@ -23,8 +25,14 @@ io.on("connection", (socket) => {
   socket.on("ice", (candidate) => {
     socket.broadcast.emit("ice", candidate);
   });
+
+  socket.on("disconnect", () => {
+    console.log("Client disconnected:", socket.id);
+  });
 });
 
-server.listen(3000, () => {
-  console.log("Server listening on http://localhost:3000");
+// Cổng linh hoạt để chạy local & Render
+const PORT = process.env.PORT || 3000;
+server.listen(PORT, () => {
+  console.log(`Server listening on http://localhost:${PORT}`);
 });

@@ -1,0 +1,161 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>WebRTC Audio Call</title>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600&display=swap" rel="stylesheet">
+  <style>
+    body {
+      font-family: 'Inter', sans-serif;
+      background: #f5f7fa;
+      margin: 0;
+      padding: 40px;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      color: #333;
+    }
+
+    h2 {
+      color: #2c3e50;
+      margin-bottom: 20px;
+    }
+
+    .controls {
+      margin-bottom: 20px;
+      display: flex;
+      gap: 10px;
+    }
+
+    button {
+      padding: 10px 18px;
+      background-color: #3498db;
+      color: white;
+      border: none;
+      border-radius: 8px;
+      cursor: pointer;
+      font-weight: 600;
+      transition: background-color 0.2s ease;
+    }
+
+    button:hover {
+      background-color: #2980b9;
+    }
+
+    .audio-group {
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+      width: 300px;
+    }
+
+    .audio-group label {
+      font-weight: 600;
+      margin-bottom: 4px;
+    }
+
+    audio {
+      width: 100%;
+      border: 1px solid #ccc;
+      border-radius: 6px;
+      padding: 4px;
+    }
+  </style>
+</head>
+<body>
+  <h2>🎧 WebRTC Audio Call + Recorder</h2>
+
+  <div class="controls">
+    <button onclick="startCall()">📞 Gọi</button>
+    <button onclick="startRecording()">🎙️ Ghi âm</button>
+    <button onclick="stopRecording()">⏹️ Dừng ghi</button>
+  </div>
+
+  <div class="audio-group">
+    <label>🔊 Âm thanh của bạn</label>
+    <audio id="localAudio" autoplay muted></audio>
+
+    <label>📥 Âm thanh nhận</label>
+    <audio id="remoteAudio" autoplay></audio>
+
+    <label>📼 Ghi âm</label>
+    <audio id="recordedAudio" controls></audio>
+  </div>
+
+  <script src="/socket.io/socket.io.js"></script>
+  <script>
+    const socket = io();
+    const localAudio = document.getElementById("localAudio");
+    const remoteAudio = document.getElementById("remoteAudio");
+    const recordedAudio = document.getElementById("recordedAudio");
+
+    let localStream, mediaRecorder, recordedChunks = [];
+    let peerConnection;
+
+    const config = { iceServers: [{ urls: "stun:stun.l.google.com:19302" }] };
+
+    navigator.mediaDevices.getUserMedia({ audio: true })
+      .then(stream => {
+        localStream = stream;
+        localAudio.srcObject = stream;
+      });
+
+    socket.on("offer", async (offer) => {
+      peerConnection = new RTCPeerConnection(config);
+      setupPeerEvents();
+      await peerConnection.setRemoteDescription(new RTCSessionDescription(offer));
+      const answer = await peerConnection.createAnswer();
+      await peerConnection.setLocalDescription(answer);
+      socket.emit("answer", answer);
+    });
+
+    socket.on("answer", async (answer) => {
+      await peerConnection.setRemoteDescription(new RTCSessionDescription(answer));
+    });
+
+    socket.on("ice", (candidate) => {
+      peerConnection.addIceCandidate(new RTCIceCandidate(candidate));
+    });
+
+    function setupPeerEvents() {
+      peerConnection.onicecandidate = (e) => {
+        if (e.candidate) socket.emit("ice", e.candidate);
+      };
+      peerConnection.ontrack = (e) => {
+        remoteAudio.srcObject = e.streams[0];
+      };
+      localStream.getTracks().forEach(track => peerConnection.addTrack(track, localStream));
+    }
+
+    function startCall() {
+      peerConnection = new RTCPeerConnection(config);
+      setupPeerEvents();
+      peerConnection.createOffer()
+        .then(offer => {
+          peerConnection.setLocalDescription(offer);
+          socket.emit("offer", offer);
+        });
+    }
+
+    function startRecording() {
+      recordedChunks = [];
+      mediaRecorder = new MediaRecorder(localStream);
+      mediaRecorder.ondataavailable = (e) => {
+        if (e.data.size > 0) recordedChunks.push(e.data);
+      };
+      mediaRecorder.onstop = () => {
+        const blob = new Blob(recordedChunks, { type: "audio/webm" });
+        recordedAudio.src = URL.createObjectURL(blob);
+      };
+      mediaRecorder.start();
+    }
+
+    function stopRecording() {
+      if (mediaRecorder && mediaRecorder.state === "recording") {
+        mediaRecorder.stop();
+      }
+    }
+  </script>
+</body>
+</html>
