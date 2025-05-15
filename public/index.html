@@ -70,6 +70,7 @@
     <button onclick="startCall()">📞 Gọi</button>
     <button onclick="startRecording()">🎙️ Ghi âm</button>
     <button onclick="stopRecording()">⏹️ Dừng ghi</button>
+    <button onclick="stopCall()">📞 Kết thúc</button>
   </div>
 
   <div class="audio-group">
@@ -81,6 +82,9 @@
 
     <label>📼 Ghi âm</label>
     <audio id="recordedAudio" controls></audio>
+
+    
+  </div>
   </div>
 
   <script src="/socket.io/socket.io.js"></script>
@@ -155,6 +159,28 @@
       if (mediaRecorder && mediaRecorder.state === "recording") {
         mediaRecorder.stop();
       }
+    }
+    function stopCall() {
+      if (peerConnection) {
+          // Close all tracks
+          if (localStream) {
+              localStream.getTracks().forEach(track => track.stop());
+          }
+          
+          // Close the peer connection
+          peerConnection.close();
+          peerConnection = null;
+          
+          // Clear the remote audio
+          if (remoteAudio) {
+              remoteAudio.srcObject = null;
+          }
+          
+          // Stop recording if it's still running
+          if (mediaRecorder && mediaRecorder.state === "recording") {
+              mediaRecorder.stop();
+          }
+        }
     }
   </script>
 </body>
