@@ -1,0 +1,26 @@
+services:
+  web_call_audio:
+    build:
+      context: .
+    # depends_on: ( database )
+    environment:
+      FLASK_ENV: development
+    ports:
+      - 3000:3000
+    # develop:
+    #   watch:
+    #     - path: ./app/package.json
+    #       action: rebuild
+    #     - path: ./app
+    #       target: /usr/src/app
+    #       action: sync
+
+  # todo-database:
+  #   image: mongo:6
+  #   volumes: 
+  #    - database:/data/db
+  #   ports:
+  #     - 27017:27017
+
+# volumes:
+#   database:

@@ -1,0 +1,25 @@
+# Bỏ qua thư mục node_modules (nếu là dự án Node.js)
+node_modules
+
+# Bỏ qua các file log
+*.log
+
+# Bỏ qua thư mục build hoặc dist (nếu build ra trước rồi copy vào image)
+build
+dist
+
+# Bỏ qua các file git
+.git
+.gitignore
+
+# Bỏ qua các file IDE, editor config
+.vscode
+.idea
+
+# Bỏ qua file dockerignore và dockerfile (nếu muốn)
+.dockerignore
+Dockerfile
+
+# Bỏ qua file tạm hoặc cache
+*.tmp
+*.cache

@@ -6,25 +6,23 @@ const socket = io({
   timeout: 60000
 });
 
-
 const localAudio = document.getElementById("localAudio");
 const remoteAudio = document.getElementById("remoteAudio");
-const recordedAudio = document.getElementById("recordedAudio");
 const transcriptionBox = document.getElementById("transcription");
 const callPopup = document.getElementById("callPopup");
 const btnCall = document.getElementById("btnCall");
+
+let localStream = null;
+let mediaRecorder = null;
+let peerConnection = null;
 
 document.getElementById('btnCall').addEventListener('click', handleCallButton);
 document.getElementById('btnStopCall').addEventListener('click', stopCall);
 document.getElementById('btnMute').addEventListener('click', function() {
   toggleMute(this);
 });
-document.getElementById('btnS2T').addEventListener('click', speechtoText);
 document.getElementById('btnShowText').addEventListener('click', showTranscription);
-document.getElementById('btnClosePopup').addEventListener('click', closeCallPopup);
-
-let localStream, mediaRecorder, recordedChunks = [];
-let peerConnection;
+// document.getElementById('btnClosePopup').addEventListener('click', closeCallPopup);
 
 const config = { iceServers: [{ urls: "stun:stun.l.google.com:19302" }] };
 
@@ -44,25 +42,71 @@ socket.on("offer", async (offer) => {
   peerConnection = new RTCPeerConnection(config);
   setupPeerEvents();
 
-  await peerConnection.setRemoteDescription(new RTCSessionDescription(offer));
-  const answer = await peerConnection.createAnswer();
-  await peerConnection.setLocalDescription(answer);
-
-  socket.emit("answer", answer);
+  try {
+    await peerConnection.setRemoteDescription(new RTCSessionDescription(offer));
+    const answer = await peerConnection.createAnswer();
+    await peerConnection.setLocalDescription(answer);
+    socket.emit("answer", answer);
+  } catch (err) {
+    console.error("Lỗi xử lý offer:", err);
+  }
 });
 
 // Socket nhận answer
 socket.on("answer", async (answer) => {
   if (!peerConnection) return;
-  await peerConnection.setRemoteDescription(new RTCSessionDescription(answer));
+  try {
+    await peerConnection.setRemoteDescription(new RTCSessionDescription(answer));
+  } catch (err) {
+    console.error("Lỗi xử lý answer:", err);
+  }
 });
 
 // Socket nhận ICE candidate
 socket.on("ice", (candidate) => {
   if (peerConnection) {
-    peerConnection.addIceCandidate(new RTCIceCandidate(candidate));
+    peerConnection.addIceCandidate(new RTCIceCandidate(candidate))
+      .catch(e => console.error("Lỗi thêm ICE candidate:", e));
   }
 });
+
+// Socket nhận transcript text
+socket.on("transcript", (text) => {
+  const output = document.getElementById("output");
+  output.innerText += ' ' + text;
+});
+
+function startSendingAudioStream() {
+  if (!localStream) return;
+
+  if (mediaRecorder && mediaRecorder.state === "recording") {
+    mediaRecorder.stop();
+  }
+
+  try {
+    mediaRecorder = new MediaRecorder(localStream, { mimeType: 'audio/webm' });
+  } catch (e) {
+    alert("MediaRecorder không được hỗ trợ hoặc lỗi khởi tạo: " + e);
+    return;
+  }
+
+  mediaRecorder.start(250); // Mỗi 250ms gửi 1 chunk
+
+  mediaRecorder.ondataavailable = e => {
+    if (e.data && e.data.size > 0) {
+      const reader = new FileReader();
+      reader.onloadend = () => {
+        const arrayBuffer = reader.result;
+        socket.emit('audio', arrayBuffer);
+      };
+      reader.readAsArrayBuffer(e.data);
+    }
+  };
+
+  mediaRecorder.onerror = (event) => {
+    console.error("MediaRecorder error:", event.error);
+  };
+}
 
 function setupPeerEvents() {
   if (!peerConnection) return;
@@ -75,56 +119,30 @@ function setupPeerEvents() {
     remoteAudio.srcObject = e.streams[0];
   };
 
-  // Thêm track audio từ localStream vào kết nối
   if (localStream) {
     localStream.getTracks().forEach(track => peerConnection.addTrack(track, localStream));
   }
 }
 
 // Hàm bật popup và bắt đầu gọi
-function handleCallButton() {
-  openCallPopup();
-  startCall();
-  
-}
-
-// Bắt đầu cuộc gọi: tạo offer, gửi qua socket, bắt đầu ghi âm
 function startCall() {
   peerConnection = new RTCPeerConnection(config);
   setupPeerEvents();
 
   peerConnection.createOffer()
-    .then(offer => {
-      return peerConnection.setLocalDescription(offer).then(() => offer);
-    })
+    .then(offer => peerConnection.setLocalDescription(offer).then(() => offer))
     .then(offer => {
       socket.emit("offer", offer);
     })
     .catch(err => {
       alert("Lỗi khi tạo offer: " + err);
+      console.error(err);
     });
-  if (localStream) {
-    mediaRecorder = new MediaRecorder(localStream);
-    mediaRecorder.ondataavailable = (e) => {
-      if (e.data.size > 0) recordedChunks.push(e.data);
-    };
-  
-    mediaRecorder.onstop = () => {
-      const blob = new Blob(recordedChunks, { type: "audio/webm" });
-      recordedAudio.src = URL.createObjectURL(blob);
-    };
-  
-    mediaRecorder.start();  
-  }
 }
 
-// Dừng cuộc gọi, đóng kết nối, dừng stream, ẩn popup
+// Dừng cuộc gọi, đóng kết nối, dừng ghi âm, ẩn popup
 function stopCall() {
   if (peerConnection) {
-    if (localStream) {
-      localStream.getTracks().forEach(track => track.stop());
-    }
-
     peerConnection.close();
     peerConnection = null;
 
@@ -137,6 +155,13 @@ function stopCall() {
   closeCallPopup();
 }
 
+// Xử lý nút gọi
+function handleCallButton() {
+  openCallPopup();
+  startCall();
+  startSendingAudioStream();
+}
+
 // Bật / tắt tiếng micro
 function toggleMute(button) {
   if (!localStream) return;
@@ -145,15 +170,12 @@ function toggleMute(button) {
     track.enabled = !track.enabled;
   });
 
-  // Đổi icon hoặc màu nút
   if (button.innerText === "🔇 Tắt tiếng") {
     button.innerText = "🎤 Bật tiếng";
   } else {
     button.innerText = "🔇 Tắt tiếng";
   }
 }
-
-
 
 // Mở popup cuộc gọi
 function openCallPopup() {
@@ -167,30 +189,6 @@ function closeCallPopup() {
   callPopup.classList.add("hidden");
   btnCall.disabled = false;
   btnCall.style.backgroundColor = "";
-}
-
-// Chuyển giọng nói thành văn bản (speech-to-text)
-function speechtoText() {
-  if (!('webkitSpeechRecognition' in window)) {
-    alert("Trình duyệt không hỗ trợ nhận diện giọng nói");
-    return;
-  }
-
-  const recognition = new webkitSpeechRecognition();
-  recognition.lang = "vi-VN";  
-  recognition.interimResults = false;
-  recognition.maxAlternatives = 1;
-
-  recognition.onresult = (event) => {
-    const transcript = event.results[0][0].transcript;
-    transcriptionBox.value += transcript + "\n";
-  };
-
-  recognition.onerror = (event) => {
-    alert("Lỗi nhận diện giọng nói: " + event.error);
-  };
-
-  recognition.start();
 }
 
 // Hiển thị khung transcription nếu đang ẩn
