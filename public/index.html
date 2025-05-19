@@ -2,186 +2,272 @@
 <html lang="en">
 <head>
   <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>WebRTC Audio Call</title>
-  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600&display=swap" rel="stylesheet">
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700&display=swap" rel="stylesheet" />
   <style>
+    * {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+    }
+
     body {
       font-family: 'Inter', sans-serif;
-      background: #f5f7fa;
-      margin: 0;
-      padding: 40px;
+      background: linear-gradient(135deg, #e6e9f0 0%, #f0f4f8 100%);
+      padding: 2rem;
+      color: #2d3748;
+      min-height: 100vh;
       display: flex;
       flex-direction: column;
       align-items: center;
-      color: #333;
+    }
+
+    .container {
+      max-width: 700px;
+      width: 100%;
+      background: #ffffff;
+      border-radius: 12px;
+      padding: 1.5rem;
+      box-shadow: 0 4px 20px rgba(0, 0, 0, 0.08);
     }
 
     h2 {
-      color: #2c3e50;
-      margin-bottom: 20px;
+      font-size: 1.8rem;
+      font-weight: 700;
+      color: #1a202c;
+      margin-bottom: 1.5rem;
+      display: flex;
+      align-items: center;
+      gap: 0.5rem;
     }
 
     .controls {
-      margin-bottom: 20px;
       display: flex;
-      gap: 10px;
+      flex-wrap: wrap;
+      gap: 0.75rem;
+      margin-bottom: 1.5rem;
     }
 
-    button {
+    .controls button {
       padding: 10px 18px;
-      background-color: #3498db;
-      color: white;
+      font-size: 0.95rem;
+      font-weight: 600;
       border: none;
       border-radius: 8px;
       cursor: pointer;
-      font-weight: 600;
-      transition: background-color 0.2s ease;
+      background-color: #3b82f6;
+      color: #ffffff;
+      transition: background-color 0.2s, transform 0.1s;
     }
 
-    button:hover {
-      background-color: #2980b9;
+    .controls button:disabled {
+      background-color: #a0aec0;
+      cursor: not-allowed;
+    }
+
+    .controls button:hover:not(:disabled) {
+      background-color: #2563eb;
+      transform: translateY(-1px);
+    }
+
+    .controls button:active:not(:disabled) {
+      transform: translateY(0);
+    }
+
+    .text-group {
+      margin-bottom: 1.5rem;
+    }
+
+    .text-group label {
+      display: block;
+      font-size: 0.95rem;
+      font-weight: 600;
+      color: #4a5568;
+      margin-bottom: 0.5rem;
+    }
+
+    #transcription {
+      width: 100%;
+      min-height: 100px;
+      font-size: 0.9rem;
+      padding: 12px;
+      border: 1px solid #e2e8f0;
+      border-radius: 8px;
+      resize: vertical;
+      background: #f7fafc;
+      color: #2d3748;
+      display: none;
+      transition: border-color 0.2s;
+    }
+
+    #transcription:focus {
+      outline: none;
+      border-color: #3b82f6;
+      box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.1);
     }
 
     .audio-group {
-      display: flex;
-      flex-direction: column;
-      gap: 10px;
-      width: 300px;
+      margin-bottom: 1.5rem;
     }
 
     .audio-group label {
+      display: block;
+      font-size: 0.95rem;
       font-weight: 600;
-      margin-bottom: 4px;
+      color: #4a5568;
+      margin-bottom: 0.5rem;
     }
 
     audio {
       width: 100%;
-      border: 1px solid #ccc;
+      margin-top: 0.5rem;
+      border-radius: 8px;
+      background: #edf2f7;
+      outline: none;
+    }
+
+    .call-popup {
+      position: fixed;
+      bottom: 1.5rem;
+      right: 1.5rem;
+      width: 320px;
+      background: #ffffff;
+      border-radius: 12px;
+      box-shadow: 0 8px 24px rgba(0, 0, 0, 0.15);
+      z-index: 1000;
+      overflow: hidden;
+      transition: transform 0.3s ease, opacity 0.3s ease;
+    }
+
+    .call-popup.hidden {
+      transform: scale(0.8);
+      opacity: 0;
+      pointer-events: none;
+    }
+
+    .popup-header {
+      padding: 0.75rem 1rem;
+      background: linear-gradient(90deg, #3b82f6, #2563eb);
+      color: #ffffff;
+      font-weight: 600;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+    }
+
+    .popup-header button {
+      background: transparent;
+      border: none;
+      color: #ffffff;
+      font-size: 1.2rem;
+      cursor: pointer;
+      transition: color 0.2s;
+    }
+
+    .popup-header button:hover {
+      color: #e2e8f0;
+    }
+
+    .popup-body {
+      padding: 1rem;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 1rem;
+      background: #f7fafc;
+    }
+
+    .popup-body p {
+      font-size: 1rem;
+      color: #2d3748;
+      font-weight: 500;
+    }
+
+    .popup-body button {
+      padding: 8px 16px;
+      font-size: 0.9rem;
+      font-weight: 600;
+      border: none;
       border-radius: 6px;
-      padding: 4px;
+      background-color: #e53e3e;
+      color: #ffffff;
+      cursor: pointer;
+      transition: background-color 0.2s;
+    }
+
+    .popup-body button:hover {
+      background-color: #c53030;
+    }
+
+    @media (max-width: 600px) {
+      body {
+        padding: 1rem;
+      }
+
+      .container {
+        padding: 1rem;
+      }
+
+      h2 {
+        font-size: 1.5rem;
+      }
+
+      .controls button {
+        padding: 8px 14px;
+        font-size: 0.9rem;
+      }
+
+      .call-popup {
+        width: 90%;
+        bottom: 1rem;
+        right: 1rem;
+      }
     }
   </style>
 </head>
 <body>
-  <h2>🎧 WebRTC Audio Call + Recorder</h2>
+  <div class="container">
+    <h2>🎧 WebRTC Audio Call + Recorder</h2>
 
-  <div class="controls">
-    <button onclick="startCall()">📞 Gọi</button>
-    <button onclick="startRecording()">🎙️ Ghi âm</button>
-    <button onclick="stopRecording()">⏹️ Dừng ghi</button>
-    <button onclick="stopCall()">📞 Kết thúc</button>
+    <div class="controls">
+      <button id="btnCall">📞 Gọi</button>
+      <button id="btnStopCall">📞 Kết thúc</button>
+      <button id="btnMute">🔇 Tắt tiếng</button>
+      <button id="btnS2T">S2T</button>
+      <button id="btnShowText">Show text</button>
+    </div>
+
+    <div class="text-group">
+      <label>📝 Chuyển đổi giọng nói thành văn bản</label>
+      <textarea id="transcription" rows="4"></textarea>
+    </div>
+
+    <div class="audio-group">
+      <label>🔊 Âm thanh của bạn</label>
+      <audio id="localAudio" autoplay muted></audio>
+
+      <label>📥 Âm thanh nhận</label>
+      <audio id="remoteAudio" autoplay></audio>
+
+      <label>📼 Ghi âm</label>
+      <audio id="recordedAudio" controls></audio>
+    </div>
   </div>
 
-  <div class="audio-group">
-    <label>🔊 Âm thanh của bạn</label>
-    <audio id="localAudio" autoplay muted></audio>
-
-    <label>📥 Âm thanh nhận</label>
-    <audio id="remoteAudio" autoplay></audio>
-
-    <label>📼 Ghi âm</label>
-    <audio id="recordedAudio" controls></audio>
-
-    
-  </div>
+  <!-- Popup gọi -->
+  <div id="callPopup" class="call-popup hidden">
+    <div class="popup-header">
+      <span>Cuộc gọi</span>
+      <button onclick="closeCallPopup()">✖</button>
+    </div>
+    <div class="popup-body">
+      <p id="callStatus">Đang gọi...</p>
+      <button onclick="stopCall()">Kết thúc</button>
+    </div>
   </div>
 
-  <script src="/socket.io/socket.io.js"></script>
-  <script>
-    const socket = io();
-    const localAudio = document.getElementById("localAudio");
-    const remoteAudio = document.getElementById("remoteAudio");
-    const recordedAudio = document.getElementById("recordedAudio");
-
-    let localStream, mediaRecorder, recordedChunks = [];
-    let peerConnection;
-
-    const config = { iceServers: [{ urls: "stun:stun.l.google.com:19302" }] };
-
-    navigator.mediaDevices.getUserMedia({ audio: true })
-      .then(stream => {
-        localStream = stream;
-        localAudio.srcObject = stream;
-      });
-
-    socket.on("offer", async (offer) => {
-      peerConnection = new RTCPeerConnection(config);
-      setupPeerEvents();
-      await peerConnection.setRemoteDescription(new RTCSessionDescription(offer));
-      const answer = await peerConnection.createAnswer();
-      await peerConnection.setLocalDescription(answer);
-      socket.emit("answer", answer);
-    });
-
-    socket.on("answer", async (answer) => {
-      await peerConnection.setRemoteDescription(new RTCSessionDescription(answer));
-    });
-
-    socket.on("ice", (candidate) => {
-      peerConnection.addIceCandidate(new RTCIceCandidate(candidate));
-    });
-
-    function setupPeerEvents() {
-      peerConnection.onicecandidate = (e) => {
-        if (e.candidate) socket.emit("ice", e.candidate);
-      };
-      peerConnection.ontrack = (e) => {
-        remoteAudio.srcObject = e.streams[0];
-      };
-      localStream.getTracks().forEach(track => peerConnection.addTrack(track, localStream));
-    }
-
-    function startCall() {
-      peerConnection = new RTCPeerConnection(config);
-      setupPeerEvents();
-      peerConnection.createOffer()
-        .then(offer => {
-          peerConnection.setLocalDescription(offer);
-          socket.emit("offer", offer);
-        });
-    }
-
-    function startRecording() {
-      recordedChunks = [];
-      mediaRecorder = new MediaRecorder(localStream);
-      mediaRecorder.ondataavailable = (e) => {
-        if (e.data.size > 0) recordedChunks.push(e.data);
-      };
-      mediaRecorder.onstop = () => {
-        const blob = new Blob(recordedChunks, { type: "audio/webm" });
-        recordedAudio.src = URL.createObjectURL(blob);
-      };
-      mediaRecorder.start();
-    }
-
-    function stopRecording() {
-      if (mediaRecorder && mediaRecorder.state === "recording") {
-        mediaRecorder.stop();
-      }
-    }
-    function stopCall() {
-      if (peerConnection) {
-          // Close all tracks
-          if (localStream) {
-              localStream.getTracks().forEach(track => track.stop());
-          }
-          
-          // Close the peer connection
-          peerConnection.close();
-          peerConnection = null;
-          
-          // Clear the remote audio
-          if (remoteAudio) {
-              remoteAudio.srcObject = null;
-          }
-          
-          // Stop recording if it's still running
-          if (mediaRecorder && mediaRecorder.state === "recording") {
-              mediaRecorder.stop();
-          }
-        }
-    }
-  </script>
+  <script src="https://cdn.socket.io/3.1.3/socket.io.min.js"></script>
+  <script src="call.js"></script>
 </body>
 </html>
