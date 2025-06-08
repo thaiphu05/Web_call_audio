@@ -71,43 +71,172 @@ socket.on("ice", (candidate) => {
 });
 
 // Socket nhận transcript text
-socket.on("transcript", (text) => {
-  const output = document.getElementById("output");
-  output.innerText += ' ' + text;
+socket.on("transcript", (data) => {
+    console.log("Nhận transcript:", data);
+
+    // Lấy references một lần
+    const container = document.getElementById("transcription-container");
+    const output = document.getElementById("transcription-output");
+
+    if (!container || !output) {
+        console.error("Không tìm thấy elements transcription");
+        return;
+    }
+
+    // Hiển thị container nếu đang ẩn
+    if (container.style.display === "none") {
+        container.style.display = "block";
+    }
+
+    // Xử lý dữ liệu nhận được
+    if (typeof data === 'string') {
+        // Nếu nhận trực tiếp string
+        output.value += ' ' + data;
+    } else if (data.text) {
+        // Nếu nhận object có field text
+        output.value += ' ' + data.text;
+    } else if (data.error) {
+        // Nếu có lỗi
+        output.value += '\n🔴 Lỗi: ' + data.error;
+        console.error('Transcript error:', data.error);
+    } else {
+        console.warn('Định dạng transcript không hợp lệ:', data);
+        return;
+    }
+
+    // Auto scroll xuống dưới
+    output.scrollTop = output.scrollHeight;
 });
 
-function startSendingAudioStream() {
+// Sửa lại function showTranscription chỉ để toggle hiển thị
+function showTranscription() {
+  if (transcriptionBox.style.display === "none") {
+    transcriptionBox.style.display = "block";
+  } else {
+    transcriptionBox.style.display = "none"; 
+  }
+}
+
+async function startSendingAudioStream() {
   if (!localStream) return;
 
-  if (mediaRecorder && mediaRecorder.state === "recording") {
-    mediaRecorder.stop();
-  }
+  const audioContext = new AudioContext({
+    sampleRate: 16000
+  });
 
-  try {
-    mediaRecorder = new MediaRecorder(localStream, { mimeType: 'audio/webm' });
-  } catch (e) {
-    alert("MediaRecorder không được hỗ trợ hoặc lỗi khởi tạo: " + e);
-    return;
-  }
+  const source = audioContext.createMediaStreamSource(localStream);
+  const processor = audioContext.createScriptProcessor(8192, 1, 1);
 
-  mediaRecorder.start(250); // Mỗi 250ms gửi 1 chunk
+  source.connect(processor);
+  processor.connect(audioContext.destination);
 
-  mediaRecorder.ondataavailable = e => {
-    if (e.data && e.data.size > 0) {
-      const reader = new FileReader();
-      reader.onloadend = () => {
-        const arrayBuffer = reader.result;
-        socket.emit('audio', arrayBuffer);
-      };
-      reader.readAsArrayBuffer(e.data);
+  let chunkIndex = 0;
+  const MAX_CHUNKS = 5;
+  const audioChunks = [];
+
+  const VOLUME_THRESHOLD = 0.02; // Có thể điều chỉnh
+
+  processor.onaudioprocess = (e) => {
+    const inputData = e.inputBuffer.getChannelData(0);
+
+    // Tính RMS để phát hiện tiếng nói
+    const rms = Math.sqrt(inputData.reduce((sum, sample) => sum + sample * sample, 0) / inputData.length);
+    const isSpeaking = rms > VOLUME_THRESHOLD;
+
+    if (isSpeaking) {
+      console.log("🗣️ User is speaking");
+
+      const wavBuffer = createWAVBuffer(inputData, audioContext.sampleRate);
+      const base64String = arrayBufferToBase64(wavBuffer);
+      audioChunks.push(base64String);
+
+      if (audioChunks.length >= MAX_CHUNKS) {
+        audioChunks.forEach((chunk, index) => {
+          socket.emit('audio', {
+            data: chunk,
+            chunkIndex: index,
+            totalChunks: audioChunks.length
+          });
+        });
+
+        audioChunks.length = 0;
+        chunkIndex = 0;
+      }
+    } else {
+      console.log("🤫 Silence detected, not sending");
     }
   };
 
-  mediaRecorder.onerror = (event) => {
-    console.error("MediaRecorder error:", event.error);
+  function createWAVBuffer(audioData, sampleRate) {
+    const buffer = new ArrayBuffer(44 + audioData.length * 2);
+    const view = new DataView(buffer);
+
+    writeString(view, 0, 'RIFF');
+    view.setUint32(4, 36 + audioData.length * 2, true);
+    writeString(view, 8, 'WAVE');
+    writeString(view, 12, 'fmt ');
+    view.setUint32(16, 16, true);
+    view.setUint16(20, 1, true);
+    view.setUint16(22, 1, true);
+    view.setUint32(24, sampleRate, true);
+    view.setUint32(28, sampleRate * 2, true);
+    view.setUint16(32, 2, true);
+    view.setUint16(34, 16, true);
+    writeString(view, 36, 'data');
+    view.setUint32(40, audioData.length * 2, true);
+
+    let index = 44;
+    for (let i = 0; i < audioData.length; i++) {
+      view.setInt16(index, audioData[i] * 0x7FFF, true);
+      index += 2;
+    }
+
+    return buffer;
+  }
+
+  function writeString(view, offset, string) {
+    for (let i = 0; i < string.length; i++) {
+      view.setUint8(offset + i, string.charCodeAt(i));
+    }
+  }
+
+  function arrayBufferToBase64(buffer) {
+    const bytes = new Uint8Array(buffer);
+    const binary = bytes.reduce((acc, byte) => acc + String.fromCharCode(byte), '');
+    return btoa(binary);
+  }
+
+  return () => {
+    if (audioChunks.length > 0) {
+      audioChunks.forEach((chunk, index) => {
+        socket.emit('audio', {
+          data: chunk,
+          chunkIndex: index,
+          totalChunks: audioChunks.length
+        });
+      });
+    }
+
+    processor.disconnect();
+    source.disconnect();
+    audioContext.close();
   };
 }
 
+function stopCall() {
+  if (peerConnection) {
+    peerConnection.close();
+    peerConnection = null;
+    remoteAudio.srcObject = null;
+    
+    // Dọn dẹp audio processing
+    if (this.audioCleanup) {
+      this.audioCleanup();
+      this.audioCleanup = null;
+    }
+  }
+  closeCallPopup();
+}
 function setupPeerEvents() {
   if (!peerConnection) return;
 
@@ -138,21 +267,6 @@ function startCall() {
       alert("Lỗi khi tạo offer: " + err);
       console.error(err);
     });
-}
-
-// Dừng cuộc gọi, đóng kết nối, dừng ghi âm, ẩn popup
-function stopCall() {
-  if (peerConnection) {
-    peerConnection.close();
-    peerConnection = null;
-
-    remoteAudio.srcObject = null;
-
-    if (mediaRecorder && mediaRecorder.state === "recording") {
-      mediaRecorder.stop();
-    }
-  }
-  closeCallPopup();
 }
 
 // Xử lý nút gọi
@@ -189,10 +303,4 @@ function closeCallPopup() {
   callPopup.classList.add("hidden");
   btnCall.disabled = false;
   btnCall.style.backgroundColor = "";
-}
-
-// Hiển thị khung transcription nếu đang ẩn
-function showTranscription() {
-  transcriptionBox.style.display = "block";
-  transcriptionBox.focus();
 }
